@@ -8,6 +8,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/mmcdole/gofeed v1.3.0
 	github.com/robfig/cron/v3 v3.0.1
+	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/driver/sqlite v1.5.6
 	gorm.io/gorm v1.25.12
@@ -62,5 +63,4 @@ require (
 	golang.org/x/text v0.21.0 // indirect
 	google.golang.org/appengine v1.6.6 // indirect
 	google.golang.org/protobuf v1.34.1 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

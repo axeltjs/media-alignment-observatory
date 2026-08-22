@@ -1,6 +1,7 @@
 package service
 
 import (
+	"github.com/hafidluqman50/maoi/src/config"
 	"github.com/hafidluqman50/maoi/src/repository"
 	"github.com/hafidluqman50/maoi/src/service/analysis"
 	"github.com/hafidluqman50/maoi/src/service/external"
@@ -10,6 +11,7 @@ import (
 
 type Registry struct {
 	RSS            *scraper.RSSService
+	Government     *scraper.GovernmentService
 	ArticleScraper *scraper.ArticleScraper
 	Preprocessing  *nlp.PreprocessingService
 	Embedding      *nlp.EmbeddingService
@@ -18,9 +20,15 @@ type Registry struct {
 	Framing        *analysis.FramingService
 }
 
-func NewRegistry(repos repository.Registry, embeddingClient *external.EmbeddingClient, claudeClient *external.ClaudeClient) Registry {
+func NewRegistry(
+	repos repository.Registry,
+	embeddingClient *external.EmbeddingClient,
+	claudeClient *external.ClaudeClient,
+	govSources []config.GovernmentSource,
+) Registry {
 	preprocessingSvc := nlp.NewPreprocessingService()
 	rssSvc := scraper.NewRSSService(repos.Source, repos.Article)
+	governmentSvc := scraper.NewGovernmentService(repos.GovernmentContent, govSources)
 	articleScraper := scraper.NewArticleScraper(repos.Article)
 
 	embeddingSvc := &nlp.EmbeddingService{
@@ -48,6 +56,7 @@ func NewRegistry(repos repository.Registry, embeddingClient *external.EmbeddingC
 
 	return Registry{
 		RSS:            rssSvc,
+		Government:     governmentSvc,
 		ArticleScraper: articleScraper,
 		Preprocessing:  preprocessingSvc,
 		Embedding:      embeddingSvc,

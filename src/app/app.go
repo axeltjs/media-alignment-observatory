@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/hafidluqman50/maoi/src/cron"
-	robfigcron "github.com/robfig/cron/v3"
 	"github.com/joho/godotenv"
+	robfigcron "github.com/robfig/cron/v3"
 )
 
 func Run() error {
@@ -24,9 +24,9 @@ func Run() error {
 	}
 	defer app.Cleanup()
 
-	// Seed default sources on first run.
+	// Reconcile the sources table with config/media_list.yaml.
 	ctx := context.Background()
-	seedDefaultSources(ctx, app.Services.RSS.SourceRepo)
+	seedSources(ctx, app.Services.RSS.SourceRepo, app.MediaList.ActiveMedia())
 
 	// Start cron scheduler.
 	c := robfigcron.New()

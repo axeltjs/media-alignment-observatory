@@ -17,9 +17,10 @@ import (
 )
 
 type application struct {
-	Router  *gin.Engine
-	Services service.Registry
-	Cleanup func()
+	Router    *gin.Engine
+	Services  service.Registry
+	MediaList config.MediaList
+	Cleanup   func()
 }
 
 func build() (*application, error) {
@@ -48,8 +49,18 @@ func build() (*application, error) {
 		slog.Warn("claude client not configured — LLM framing analysis disabled")
 	}
 
+	mediaListPath := config.MediaListPath()
+	mediaList, err := config.LoadMediaList(mediaListPath)
+	if err != nil {
+		return nil, fmt.Errorf("load source registry: %w", err)
+	}
+	slog.Info("source registry loaded",
+		"path", mediaListPath,
+		"media", len(mediaList.ActiveMedia()),
+		"government", len(mediaList.ActiveGovernment()))
+
 	repos := repository.NewRegistry(db)
-	svcs := service.NewRegistry(repos, embeddingClient, claudeClient)
+	svcs := service.NewRegistry(repos, embeddingClient, claudeClient, mediaList.ActiveGovernment())
 
 	apihandler.ConfigureServices(apihandler.Services{Registry: svcs})
 
@@ -63,7 +74,7 @@ func build() (*application, error) {
 		}
 	}
 
-	return &application{Router: router, Services: svcs, Cleanup: cleanup}, nil
+	return &application{Router: router, Services: svcs, MediaList: mediaList, Cleanup: cleanup}, nil
 }
 
 func runMigrations(db *gorm.DB) error {
@@ -76,30 +87,68 @@ func runMigrations(db *gorm.DB) error {
 	)
 }
 
-func seedDefaultSources(ctx context.Context, repo *repository.SourceRepository) {
-	defaults := []repository.SourceCreateInput{
-		{Name: "Kompas", RSSUrl: "https://rss.kompas.com/nasional", BaseUrl: "https://kompas.com", Category: "nasional"},
-		{Name: "Detik", RSSUrl: "https://rss.detik.com/index.php/detikcom", BaseUrl: "https://detik.com", Category: "umum"},
-		{Name: "Tempo", RSSUrl: "https://rss.tempo.co", BaseUrl: "https://tempo.co", Category: "nasional"},
-		{Name: "CNN Indonesia", RSSUrl: "https://www.cnnindonesia.com/rss", BaseUrl: "https://cnnindonesia.com", Category: "nasional"},
-		{Name: "Antara", RSSUrl: "https://www.antaranews.com/rss/terkini.xml", BaseUrl: "https://antaranews.com", Category: "nasional"},
+// seedSources reconciles the `sources` table with the source registry.
+// New feeds are inserted; feeds whose metadata changed are updated in place.
+// Rows already in the table but absent from the registry are left alone so
+// that sources added through the API are not clobbered.
+func seedSources(ctx context.Context, repo *repository.SourceRepository, media []config.MediaSource) {
+	existing, err := repo.FindAll(ctx)
+	if err != nil {
+		slog.Error("read existing sources for seeding", "error", err)
+		return
 	}
 
-	existing, _ := repo.FindAll(ctx)
-	existingURLs := make(map[string]bool, len(existing))
+	byURL := make(map[string]model.Source, len(existing))
 	for _, s := range existing {
-		existingURLs[s.RSSUrl] = true
+		byURL[s.RSSUrl] = s
 	}
 
-	for _, src := range defaults {
-		if existingURLs[src.RSSUrl] {
+	created, updated := 0, 0
+	for _, src := range media {
+		current, found := byURL[src.RSSUrl]
+		if !found {
+			if _, err := repo.Create(ctx, repository.SourceCreateInput{
+				Name:     src.Name,
+				RSSUrl:   src.RSSUrl,
+				BaseUrl:  src.BaseUrl,
+				Category: src.Category,
+			}); err != nil {
+				slog.Warn("seed source failed", "name", src.Name, "error", err)
+				continue
+			}
+			created++
 			continue
 		}
-		id, err := repo.Create(ctx, src)
-		if err != nil {
-			slog.Warn("seed source failed", "name", src.Name, "error", err)
-		} else {
-			slog.Info("seeded source", "name", src.Name, "id", id)
+
+		// Keep an existing row in step with the registry.
+		update := repository.SourceUpdateInput{}
+		changed := false
+		if current.Name != src.Name {
+			update.Name = &src.Name
+			changed = true
 		}
+		if current.BaseUrl != src.BaseUrl {
+			update.BaseUrl = &src.BaseUrl
+			changed = true
+		}
+		if current.Category != src.Category {
+			update.Category = &src.Category
+			changed = true
+		}
+		if !current.IsActive {
+			active := true
+			update.IsActive = &active
+			changed = true
+		}
+		if !changed {
+			continue
+		}
+		if err := repo.Update(ctx, current.ID, update); err != nil {
+			slog.Warn("update seeded source failed", "name", src.Name, "error", err)
+			continue
+		}
+		updated++
 	}
+
+	slog.Info("sources seeded", "created", created, "updated", updated, "registry_total", len(media))
 }

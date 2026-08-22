@@ -7,20 +7,17 @@ import (
 	"time"
 
 	"github.com/hafidluqman50/maoi/src/repository"
-	"github.com/mmcdole/gofeed"
 )
 
 type RSSService struct {
 	SourceRepo  *repository.SourceRepository
 	ArticleRepo *repository.ArticleRepository
-	parser      *gofeed.Parser
 }
 
 func NewRSSService(sourceRepo *repository.SourceRepository, articleRepo *repository.ArticleRepository) *RSSService {
 	return &RSSService{
 		SourceRepo:  sourceRepo,
 		ArticleRepo: articleRepo,
-		parser:      gofeed.NewParser(),
 	}
 }
 
@@ -46,7 +43,7 @@ func (s *RSSService) FetchAllSources(ctx context.Context) []FetchResult {
 }
 
 func (s *RSSService) FetchSource(ctx context.Context, sourceID int64, rssURL string) (int, error) {
-	feed, err := s.parser.ParseURLWithContext(rssURL, ctx)
+	feed, err := fetchFeed(ctx, rssURL)
 	if err != nil {
 		return 0, fmt.Errorf("parse rss %s: %w", rssURL, err)
 	}

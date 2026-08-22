@@ -1,0 +1,185 @@
+# Media Alignment Observatory Indonesia — source registry
+#
+# Every feed below was probed live on 2026-08-22 and returned parseable
+# entries with usable publish timestamps. Do not add a feed without probing
+# it first; roughly half of the commonly-cited Indonesian RSS URLs are dead.
+#
+# Field names mirror the `sources` table (schema.sql / src/model/source.go),
+# and are loaded at startup by src/config/media_list.go:
+#   name, rss_url, base_url, category, is_active
+#
+# NOTE ON FETCHING: user-agent handling is automatic (src/service/scraper/
+# fetch.go). Feeds are fetched with an honest MAOIBot UA and retried once with
+# a browser UA on failure. Do not "fix" this by making the browser UA the
+# default: setkab.go.id serves a WAF challenge page to browser user-agents and
+# the real feed to plain clients, so the two directions genuinely conflict.
+
+media:
+  - name: Detik
+    rss_url: https://news.detik.com/berita/rss
+    base_url: https://news.detik.com
+    category: nasional
+    is_active: true
+
+  - name: CNN Indonesia
+    rss_url: https://www.cnnindonesia.com/nasional/rss
+    base_url: https://www.cnnindonesia.com
+    category: nasional
+    is_active: true
+
+  - name: CNBC Indonesia
+    rss_url: https://www.cnbcindonesia.com/news/rss
+    base_url: https://www.cnbcindonesia.com
+    category: ekonomi
+    is_active: true
+
+  - name: Tempo
+    rss_url: https://rss.tempo.co/nasional
+    base_url: https://www.tempo.co
+    category: nasional
+    is_active: true
+
+  - name: Republika
+    rss_url: https://www.republika.co.id/rss
+    base_url: https://www.republika.co.id
+    category: umum
+    is_active: true
+
+  - name: Okezone
+    rss_url: https://sindikasi.okezone.com/index.php/rss/1/RSS2.0
+    base_url: https://www.okezone.com
+    category: umum
+    is_active: true
+
+  - name: Sindonews
+    rss_url: https://nasional.sindonews.com/rss
+    base_url: https://www.sindonews.com
+    category: nasional
+    is_active: true
+
+  - name: Tribunnews
+    rss_url: https://www.tribunnews.com/rss
+    base_url: https://www.tribunnews.com
+    category: umum
+    is_active: true
+    # Rejects feedparser's default UA with 403; fine under the MAOIBot UA.
+    requires_browser_ua: false
+
+  - name: Media Indonesia
+    rss_url: https://mediaindonesia.com/feed
+    base_url: https://mediaindonesia.com
+    category: umum
+    is_active: true
+
+  - name: JPNN
+    rss_url: https://www.jpnn.com/rss
+    base_url: https://www.jpnn.com
+    category: umum
+    is_active: true
+
+  - name: Viva
+    rss_url: https://www.viva.co.id/get/all
+    base_url: https://www.viva.co.id
+    category: umum
+    is_active: true
+
+  - name: Kumparan
+    rss_url: https://lapi.kumparan.com/v2.0/rss/
+    base_url: https://kumparan.com
+    category: umum
+    is_active: true
+
+  - name: Katadata
+    rss_url: https://katadata.co.id/rss
+    base_url: https://katadata.co.id
+    category: ekonomi
+    is_active: true
+
+  # LKBN Antara is the state-owned news agency. It is a media outlet, but it
+  # is government-adjacent and heavily syndicated by other outlets. Treat its
+  # alignment scores separately — high similarity here is expected, not a
+  # finding, and syndication of Antara copy can masquerade as "coordination".
+  - name: Antara
+    rss_url: https://www.antaranews.com/rss/terkini
+    base_url: https://www.antaranews.com
+    category: kantor_berita_negara
+    is_active: true
+
+# ---------------------------------------------------------------------------
+# Official government sources — the alignment baseline (project objective #1).
+#
+# These are NOT stored in the `sources` table. They are read from this file at
+# startup by GovernmentService (src/service/scraper/government_service.go),
+# which writes into `government_contents`. `agency` maps to that table's
+# agency column; there is no rss_url column, so the feed URL lives only here.
+#
+# Alignment analysis produces nothing while this list is empty — every article
+# is scored against this corpus.
+# ---------------------------------------------------------------------------
+government:
+  - name: Sekretariat Kabinet
+    agency: Setkab
+    rss_url: https://setkab.go.id/feed/
+    base_url: https://setkab.go.id
+    is_active: true
+
+  # Feed parses fine, but every item is a ~70-char excerpt with no
+  # content:encoded, and the article pages sit behind a Cloudflare JS
+  # challenge — so there is no body text to embed. Re-enable if the challenge
+  # is lifted or a headless fetcher is added.
+  - name: Kemenko Polhukam
+    agency: Kemenko Polhukam
+    rss_url: https://polkam.go.id/feed/
+    base_url: https://polkam.go.id
+    is_active: false
+
+# ---------------------------------------------------------------------------
+# Probed and rejected — kept so these are not re-added by mistake.
+# Re-probe occasionally; blocks and URL schemes change.
+# ---------------------------------------------------------------------------
+disabled:
+  - name: Kompas
+    tried: [https://www.kompas.com/rss, https://rss.kompas.com/api/feed/news, https://rss.kompas.com/nasional]
+    reason: "403 even with full browser headers (bot protection). Currently seeded in the Go backend and silently failing."
+  - name: Detik (legacy URL)
+    tried: [https://rss.detik.com/index.php/detikcom]
+    reason: "Connection reset. Currently seeded in the Go backend and silently failing. Use https://news.detik.com/berita/rss."
+  - name: Liputan6
+    tried: [https://feed.liputan6.com/rss, https://www.liputan6.com/rss]
+    reason: "404 — no public RSS found."
+  - name: Tirto
+    tried: [https://tirto.id/rss, https://tirto.id/feed]
+    reason: "Redirects to a non-feed page."
+  - name: Merdeka
+    tried: [https://www.merdeka.com/feed/]
+    reason: "Redirects to a non-feed page."
+  - name: Suara
+    tried: [https://www.suara.com/rss]
+    reason: "Redirects to a non-feed page."
+  - name: The Jakarta Post
+    tried: [https://www.thejakartapost.com/rss]
+    reason: "404 — no public RSS found."
+  - name: Bisnis
+    tried: [https://www.bisnis.com/rss, https://kabar24.bisnis.com/rss]
+    reason: "403 / 404."
+  - name: Presiden RI
+    tried: [https://www.presidenri.go.id/feed/, https://www.presidenri.go.id/siaran-pers/feed/]
+    reason: "403 with full browser headers. High-value government source — worth revisiting via HTML scraping."
+  - name: Komdigi (ex-Kominfo)
+    tried: [https://www.komdigi.go.id/rss, https://www.kominfo.go.id/rss]
+    reason: "403 with full browser headers. High-value government source — worth revisiting via HTML scraping."
+  - name: InfoPublik
+    tried: [https://infopublik.id/feed, https://infopublik.id/index.php/feed]
+    reason: "403 / 404. Government news portal — worth revisiting via HTML scraping."
+  - name: DPR RI
+    tried: [https://www.dpr.go.id/feed]
+    reason: "403."
+  - name: BPS
+    tried: [https://www.bps.go.id/rss, https://www.bps.go.id/id/rss]
+    reason: "302 to non-feed / 404."
+  - name: Kemenkeu
+    tried: [https://www.kemenkeu.go.id/feed]
+    reason: "200 but zero entries."
+  - name: Kemlu
+    tried: [https://kemlu.go.id/feed, https://kemlu.go.id/rss]
+    reason: "200 but zero entries."

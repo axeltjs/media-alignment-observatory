@@ -2,12 +2,9 @@ package scraper
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
-	"github.com/gocolly/colly/v2"
 	"github.com/hafidluqman50/maoi/src/repository"
 )
 
@@ -41,7 +38,7 @@ func (s *ArticleScraper) ScrapeFullContent(ctx context.Context, limit int) []Scr
 		if a.Content != "" && len(strings.Fields(a.Content)) > 100 {
 			continue
 		}
-		content, err := s.scrapeURL(a.URL)
+		content, err := fetchFullText(a.URL)
 		if err != nil {
 			results = append(results, ScrapeResult{ArticleID: a.ID, Err: err})
 			continue
@@ -53,39 +50,4 @@ func (s *ArticleScraper) ScrapeFullContent(ctx context.Context, limit int) []Scr
 		results = append(results, ScrapeResult{ArticleID: a.ID})
 	}
 	return results
-}
-
-func (s *ArticleScraper) scrapeURL(url string) (string, error) {
-	c := colly.NewCollector(
-		colly.UserAgent("Mozilla/5.0 (compatible; MAOIBot/1.0; +https://github.com/hafidluqman50/maoi)"),
-		colly.MaxDepth(1),
-	)
-	_ = c.Limit(&colly.LimitRule{
-		DomainGlob:  "*",
-		Delay:       1 * time.Second,
-		RandomDelay: 500 * time.Millisecond,
-	})
-
-	var paragraphs []string
-	// Common Indonesian news article selectors.
-	c.OnHTML("article p, .article-content p, .post-content p, .entry-content p, .content p, #content p", func(e *colly.HTMLElement) {
-		text := strings.TrimSpace(e.Text)
-		if len(text) > 40 {
-			paragraphs = append(paragraphs, text)
-		}
-	})
-
-	var scrapeErr error
-	c.OnError(func(r *colly.Response, err error) {
-		scrapeErr = fmt.Errorf("colly: %w", err)
-	})
-
-	if err := c.Visit(url); err != nil && scrapeErr == nil {
-		scrapeErr = err
-	}
-
-	if scrapeErr != nil {
-		return "", scrapeErr
-	}
-	return strings.Join(paragraphs, "\n\n"), nil
 }

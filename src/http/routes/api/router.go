@@ -16,6 +16,13 @@ func RegisterRoutes(rg *gin.RouterGroup) {
 		sources.POST("/fetch", apihandler.TriggerFetchHandler)
 	}
 
+	government := rg.Group("/government")
+	{
+		government.GET("", apihandler.ListGovernmentContentHandler)
+		government.GET("/sources", apihandler.ListGovernmentSourcesHandler)
+		government.POST("/fetch", apihandler.TriggerGovernmentFetchHandler)
+	}
+
 	articles := rg.Group("/articles")
 	{
 		articles.GET("", apihandler.ListRecentArticlesHandler)

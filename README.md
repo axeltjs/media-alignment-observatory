@@ -8,7 +8,9 @@ Transparently monitors narrative alignment across Indonesian mass media using da
 
 ## Features
 
-- RSS scraping from major Indonesian news outlets
+- RSS scraping from major Indonesian news outlets, driven by a verified source
+  registry (`config/media_list.yaml`)
+- Government publication ingestion — the baseline that alignment is measured against
 - Full-article scraping via Colly
 - Indonesian text preprocessing (stopword removal, normalization)
 - Sentence embedding + cosine similarity analysis
@@ -26,6 +28,8 @@ maoi/
 ├── go.mod / go.sum
 ├── .env.example
 ├── schema.sql                       # Schema reference (AutoMigrate handles this)
+├── config/
+│   └── media_list.yaml              # Source registry — media + government feeds
 ├── Dockerfile
 │
 └── src/
@@ -35,6 +39,7 @@ maoi/
     │
     ├── config/
     │   ├── env.go                   # GetEnv, RequireEnv, GetEnvOr helpers
+    │   ├── media_list.go            # Loads/validates config/media_list.yaml
     │   └── database.go              # SQLite / PostgreSQL connection (switched by DB_CONNECTION)
     │
     ├── logger/
@@ -58,7 +63,9 @@ maoi/
     ├── service/                     # Business logic layer
     │   ├── index.go                 # Registry — initializes all services
     │   ├── scraper/
+    │   │   ├── fetch.go                  # Shared feed/page fetching + UA fallback
     │   │   ├── rss_service.go            # Fetch & parse RSS feeds (gofeed)
+    │   │   ├── government_service.go     # Ingest official government publications
     │   │   └── article_service.go        # Full-text scraping (colly)
     │   ├── nlp/
     │   │   ├── preprocessing_service.go  # Clean text, remove stopwords
@@ -77,6 +84,7 @@ maoi/
     │   │   └── api/
     │   │       ├── dependencies.go  # ConfigureServices() — injects services into handlers
     │   │       ├── sources.go       # CRUD sources + trigger fetch
+    │   │       ├── government.go    # Government corpus + configured feeds + trigger fetch
     │   │       ├── articles.go      # List articles + trigger scrape
     │   │       ├── analysis.go      # Stats, top aligned, trigger alignment/embedding/temporal
     │   │       ├── framing.go       # On-demand + batch LLM framing
@@ -114,6 +122,10 @@ POST /api/v1/sources
 DEL  /api/v1/sources/:id
 POST /api/v1/sources/fetch                                   # Manually trigger RSS fetch
 
+GET  /api/v1/government                                      # Government baseline corpus
+GET  /api/v1/government/sources                              # Configured government feeds
+POST /api/v1/government/fetch                                # Manually trigger government ingest
+
 GET  /api/v1/articles
 GET  /api/v1/articles/:id
 POST /api/v1/articles/scrape                                 # Manually trigger full-text scrape
@@ -144,6 +156,9 @@ go run .
 ```env
 PORT=8080
 
+# Source registry
+MEDIA_LIST_PATH=config/media_list.yaml
+
 # Database
 DB_CONNECTION=sqlite        # sqlite | pgsql
 DB_DATABASE=maoi.db
@@ -167,6 +182,45 @@ CLAUDE_MODEL=claude-haiku-4-5-20251001
 If `EMBEDDING_API_URL` or `ANTHROPIC_API_KEY` is not set, the related features are skipped gracefully — the app still runs.
 
 ---
+
+## Source Registry
+
+`config/media_list.yaml` is the single list of everything the pipeline reads.
+On every boot the `media:` entries are reconciled into the `sources` table —
+new feeds inserted, changed metadata updated, rows added through the API left
+alone. The `government:` entries are not stored in `sources`; they are read
+directly by `GovernmentService` and written into `government_contents`.
+
+### Adding a source
+
+**Probe the feed before adding it.** Roughly half the commonly-cited
+Indonesian RSS URLs are dead, return HTML, or 403. A feed that returns zero
+entries fails silently into a log warning and will look like "no news today".
+
+```bash
+curl -s -A "Mozilla/5.0 (compatible; MAOIBot/1.0)" <rss_url> | head -c 200
+```
+
+If that prints `<?xml` or `<rss`, add it under `media:` (or `government:`) and
+restart. If it prints HTML, the feed is behind a WAF — record it under
+`disabled:` with the reason instead, so nobody retries it later.
+
+### User-agent handling
+
+Feeds are fetched with an honest `MAOIBot` user-agent and retried once with a
+browser user-agent if that fails. Both directions are needed in practice:
+Tribunnews rejects some unfamiliar clients, while `setkab.go.id` does the
+reverse and serves a JavaScript challenge page to browser user-agents. Do not
+make the browser UA the default.
+
+### Government baseline
+
+Alignment analysis scores every article against the government corpus, so an
+empty `government_contents` table means `/api/v1/analysis/*` returns nothing.
+Items whose retrievable text falls below `minGovContentChars` (200) are skipped
+rather than stored — a one-line excerpt would otherwise become a meaningless
+document that every article gets compared against.
+
 
 ## Adding New Features
 
@@ -284,6 +338,7 @@ c.AddFunc("0 */6 * * *", func() {
 | Interval | Job |
 |---|---|
 | Every 15 minutes | Fetch all RSS feeds |
+| Every 15 minutes | Ingest government publications |
 | Every 30 minutes | Scrape full article content |
 | Every hour | Generate embeddings for articles & government content |
 | Every 2 hours | Cosine similarity alignment analysis |
