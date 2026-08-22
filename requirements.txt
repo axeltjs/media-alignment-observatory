@@ -1,9 +1,0 @@
-pandas
-newspaper3k
-sentence-transformers
-plotly
-streamlit
-pyyaml
-sqlalchemy
-tqdm
-python-dotenv
